@@ -1,0 +1,35 @@
+{
+  "name": "clawd-monitor",
+  "productName": "Tanque do Claude",
+  "version": "1.0.0",
+  "description": "Monitor do contexto e dos limites do Claude Code, com o Clawd no tanque.",
+  "author": "luizxvk",
+  "license": "MIT",
+  "private": true,
+  "main": "monitor-app/main.js",
+  "scripts": {
+    "start": "electron .",
+    "icone": "node monitor-app/gerar-icone.js",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.luizxvk.clawd-monitor",
+    "productName": "Tanque do Claude",
+    "files": [
+      "monitor-app/**/*",
+      "!monitor-app/shot.js",
+      "!monitor-app/gerar-icone.js",
+      "*.js",
+      "*.ps1",
+      "context-monitor.html",
+      "package.json"
+    ],
+    "win": { "icon": "monitor-app/clawd.ico", "target": "portable" },
+    "portable": { "artifactName": "TanqueDoClaude-${version}.exe" },
+    "directories": { "output": "dist" }
+  }
+}

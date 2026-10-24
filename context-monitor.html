@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tanque do Claude</title>
+<link rel="icon" href="monitor-app/clawd.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* tema do Claude: creme + laranja Clawd; escuro segue o Windows */
+  :root {
+    --fundo: #faf9f5;
+    --superficie: #f0eee6;
+    --tinta: #141413;
+    --apagado: #73726c;
+    --borda: #dedcd1;
+    --laranja: #d97757;
+    --liquido: #6a9bcc;
+    --alerta: #c6913e;
+    --perigo: #bf4d43;
+    --vidro: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fundo: #262624;
+      --superficie: #30302e;
+      --tinta: #faf9f5;
+      --apagado: #a6a39a;
+      --borda: #45443f;
+      --vidro: #1f1e1d;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--fundo); color: var(--tinta);
+    font: 15px/1.45 system-ui, "Segoe UI", sans-serif;
+    min-height: 100vh; display: flex; justify-content: center; padding: 26px 16px 32px;
+  }
+  main { width: 100%; max-width: 430px; display: flex; flex-direction: column; gap: 24px; }
+
+  /* chat atual: tanque com o Clawd boiando */
+  .principal { display: grid; grid-template-columns: 118px 1fr; gap: 20px; }
+  .tanque {
+    position: relative; height: 300px; border-radius: 20px 20px 26px 26px;
+    background: var(--vidro); border: 2px solid var(--borda); overflow: hidden;
+  }
+  .nivel {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: var(--liquido);
+    transition: height .9s cubic-bezier(.2,.8,.2,1), background-color .4s;
+  }
+  .nivel::before { /* superficie ondulando */
+    content: ""; position: absolute; left: 0; right: 0; top: -5px; height: 10px;
+    background: radial-gradient(circle at 10px -2px, transparent 7px, var(--liquido-atual, var(--liquido)) 7.5px) 0 0 / 20px 10px repeat-x;
+  }
+  #clawd {
+    position: absolute; left: 50%; width: 110px; height: 75px; margin-left: -55px;
+    image-rendering: pixelated; transition: bottom .9s cubic-bezier(.2,.8,.2,1), transform .3s;
+    transform-origin: 50% 0;
+  }
+  .sufocado #clawd { transform: scaleY(.84); }
+  .linha { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--apagado); opacity: .7; }
+  .linha span { position: absolute; left: 6px; top: -17px; font-size: 11px; color: var(--apagado); }
+
+  .info { display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; }
+  .assunto-atual { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pct { font-family: Lora, Georgia, serif; font-size: 84px; font-weight: 500; line-height: .95; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin-top: 6px; }
+  .pct small { font-size: 34px; }
+  .tokens { color: var(--apagado); margin-top: 8px; font-size: 13.5px; }
+  .recado { margin-top: 14px; font-family: Lora, Georgia, serif; font-size: 18px; font-weight: 500; line-height: 1.35; }
+
+  .alerta { --liquido-atual: var(--alerta); }
+  .alerta .nivel { background: var(--alerta); }
+  .perigo { --liquido-atual: var(--perigo); }
+  .perigo .nivel { background: var(--perigo); }
+  .perigo .recado { color: var(--perigo); }
+
+  /* limites da conta */
+  .limites { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .medidor { background: var(--superficie); border-radius: 14px; padding: 14px 14px 12px; }
+  .medidor h2 { font-size: 13.5px; font-weight: 600; color: var(--apagado); }
+  .medidor .num { font-family: Lora, Georgia, serif; font-size: 36px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .trilho { position: relative; height: 8px; background: var(--borda); border-radius: 4px; overflow: hidden; margin: 6px 0 8px; }
+  .trilho i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--laranja); border-radius: 4px; transition: width .9s cubic-bezier(.2,.8,.2,1); }
+  .trilho b { position: absolute; top: 0; bottom: 0; border-left: 2px solid var(--fundo); }
+  .medidor p { font-size: 13px; color: var(--apagado); }
+  .medidor.alerta i { background: var(--alerta); }
+  .medidor.perigo i { background: var(--perigo); }
+  .medidor.perigo .num { color: var(--perigo); }
+
+  /* chave */
+  .chave { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; cursor: pointer; }
+  .chave input { position: absolute; opacity: 0; }
+  .trilho-chave { width: 40px; height: 24px; border-radius: 12px; background: var(--borda); position: relative; transition: background-color .2s; }
+  .trilho-chave::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--vidro); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s; }
+  .chave input:checked + .trilho-chave { background: var(--laranja); }
+  .chave input:checked + .trilho-chave::after { transform: translateX(16px); }
+  .chave input:focus-visible + .trilho-chave { outline: 2px solid var(--laranja); outline-offset: 2px; }
+  .chave strong { display: block; font-size: 14.5px; }
+  .chave small { display: block; font-size: 13px; color: var(--apagado); line-height: 1.35; }
+  .retomar { display: flex; flex-direction: column; gap: 10px; }
+  .alvo {
+    margin-left: 52px; padding: 10px 12px; border-radius: 10px; background: var(--superficie);
+    border-left: 3px solid var(--laranja); font-size: 13.5px; line-height: 1.4;
+  }
+  .alvo strong { font-family: Lora, Georgia, serif; font-weight: 600; font-size: 15px; }
+  .alvo span { display: block; color: var(--apagado); font-size: 12.5px; }
+
+  /* outros chats */
+  /* pills do chat atual */
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -8px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 8px; border-radius: 999px;
+    background: var(--superficie); color: var(--apagado); font-size: 12.5px; border: 1px solid var(--borda);
+  }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--borda); }
+  .pill.on { color: var(--tinta); }
+  .pill.on::before { background: #788c5d; box-shadow: 0 0 0 3px rgba(120,140,93,.22); }
+  .pill.skill::before { background: var(--laranja); box-shadow: none; }
+
+  /* ritmo da sessao */
+  .ritmo { font-size: 13.5px; color: var(--apagado); margin-top: -12px; }
+  .ritmo strong { color: var(--tinta); font-weight: 600; }
+  .ritmo.avancado strong { color: var(--perigo); }
+
+  /* dicas */
+  .dica { position: relative; padding: 14px 16px 14px; border-radius: 14px; background: var(--superficie); border-left: 3px solid var(--laranja); }
+  .dica-tipo { font-size: 12.5px; font-weight: 600; color: var(--laranja); }
+  .dica p { font-family: Lora, Georgia, serif; font-size: 15.5px; line-height: 1.45; margin-top: 3px; padding-right: 64px; }
+  .dica button {
+    position: absolute; right: 10px; top: 10px; font: inherit; font-size: 12.5px; color: var(--apagado);
+    background: none; border: 1px solid var(--borda); border-radius: 8px; padding: 3px 9px; cursor: pointer;
+  }
+  .dica button:hover { color: var(--tinta); }
+  .dica button:focus-visible { outline: 2px solid var(--laranja); outline-offset: 2px; }
+
+  .outras h2 { font-size: 13.5px; font-weight: 600; color: var(--apagado); padding-bottom: 6px; }
+  .outras ul { list-style: none; padding: 0; border-top: 1px solid var(--borda); }
+  .outras li { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--borda); }
+  .outras .assunto { font-family: Lora, Georgia, serif; font-size: 15.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .outras .meta { grid-column: 1 / -1; font-size: 12.5px; color: var(--apagado); }
+  .outras li b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .outras li.alto b { color: var(--perigo); }
+
+  @media (max-width: 380px) { .limites { grid-template-columns: 1fr; } .pct { font-size: 64px; } }
+  @media (prefers-reduced-motion: reduce) { .nivel, #clawd, .trilho i { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <section class="principal" id="chat">
+    <div class="tanque" id="tanque" aria-hidden="true">
+      <div class="nivel" id="nivel"></div>
+      <canvas id="clawd" width="110" height="75"></canvas>
+    </div>
+    <div class="info">
+      <div class="assunto-atual" id="assunto">Chat atual</div>
+      <div class="pct" id="pct">–</div>
+      <div class="tokens" id="tokens">procurando o chat…</div>
+      <div class="recado" id="recado"></div>
+    </div>
+  </section>
+
+  <div class="pills" id="pills" aria-label="Ferramentas deste chat"></div>
+
+  <section class="limites">
+    <div class="medidor" id="m-sessao">
+      <h2>Sessão de 5 horas</h2>
+      <div class="num">–</div>
+      <div class="trilho"><i></i><b></b></div>
+      <p>carregando…</p>
+    </div>
+    <div class="medidor" id="m-semana">
+      <h2>Semana</h2>
+      <div class="num">–</div>
+      <div class="trilho"><i></i><b></b></div>
+      <p>carregando…</p>
+    </div>
+  </section>
+
+  <p class="ritmo" id="ritmo" hidden></p>
+
+  <aside class="dica" id="dica" aria-live="polite">
+    <span class="dica-tipo" id="dica-tipo"></span>
+    <p id="dica-texto"></p>
+    <button type="button" id="dica-proxima" aria-label="Próxima dica">Próxima</button>
+  </aside>
+
+  <label class="chave">
+    <input type="checkbox" id="avisar" checked>
+    <span class="trilho-chave" aria-hidden="true"></span>
+    <span>
+      <strong>Avisar o Claude aos 65%</strong>
+      <small>Ele para, escreve o handoff no Obsidian e te manda abrir um chat novo.</small>
+    </span>
+  </label>
+
+  <div class="retomar">
+    <label class="chave">
+      <input type="checkbox" id="retomar">
+      <span class="trilho-chave" aria-hidden="true"></span>
+      <span>
+        <strong>Retomar o chat atual quando o limite renovar</strong>
+        <small>1 minuto depois da renovação ele volta de onde parou, sozinho e sem pedir permissão. Só com o VS Code aberto e o chat parado.</small>
+      </span>
+    </label>
+    <p class="alvo" id="alvo" hidden></p>
+  </div>
+
+  <section class="outras" id="outras" hidden>
+    <h2>Outros chats recentes</h2>
+    <ul id="lista"></ul>
+  </section>
+</main>
+
+<script src="clawd.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const atras = ms => {
+    const m = Math.round((Date.now() - ms) / 60000);
+    return m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.round(m / 60)} h`;
+  };
+  const renova = iso => {
+    const d = new Date(Math.round(Date.parse(iso) / 60000) * 60000);
+    const hora = `${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
+    const hoje = new Date(), amanha = new Date(Date.now() + 864e5);
+    if (d.toDateString() === hoje.toDateString()) return `renova às ${hora}`;
+    if (d.toDateString() === amanha.toDateString()) return `renova amanhã às ${hora}`;
+    const dia = d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+    return `renova ${dia} ${d.getDate()}/${d.getMonth() + 1} às ${hora}`;
+  };
+  const tokens = n => n >= 1e6 ? (n / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'M'
+    : Math.round(n / 1000) + 'k';
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const nivel = (p, a, b) => (p >= b ? 'perigo' : p >= a ? 'alerta' : '');
+
+  // Clawd: anima no ritmo do icone da barra de tarefas
+  const ctx = $('clawd').getContext('2d');
+  const parado = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let humor = 'feliz', tique = 0, suando = false;
+  setInterval(() => {
+    ctx.clearRect(0, 0, 110, 75);
+    Clawd.desenhar(ctx, humor, parado ? 0 : tique++, 5, 2, 3.5, suando);
+  }, 280);
+
+  function posicionarClawd(p) {
+    // boia na superficie; perto do topo fica prensado contra a tampa
+    const altura = $('tanque').clientHeight;
+    const pe = (p / 100) * altura - 18;
+    $('clawd').style.bottom = Math.max(4, Math.min(pe, altura - 70)) + 'px';
+  }
+
+  let linhasFeitas = false;
+  function medidor(el, u, limite) {
+    if (!u) { el.querySelector('p').textContent = 'sem dados agora'; return; }
+    el.className = 'medidor ' + nivel(u.pct, limite, 90);
+    el.querySelector('.num').textContent = Math.round(u.pct) + '%';
+    el.querySelector('i').style.width = Math.min(100, u.pct) + '%';
+    el.querySelector('b').style.left = limite + '%';
+    el.querySelector('p').textContent = renova(u.renova);
+  }
+
+  async function atualizar() {
+    let d;
+    try { d = await window.tanque.dados(); }
+    catch { $('tokens').textContent = 'Não consegui ler os dados. Feche e abra o app de novo.'; return; }
+    const [alerta, perigo] = [d.limites[0] ?? 65, d.limites[1] ?? 80];
+
+    if (!linhasFeitas) {
+      for (const l of d.limites) {
+        const div = document.createElement('div');
+        div.className = 'linha'; div.style.bottom = l + '%';
+        div.innerHTML = `<span>${l}%</span>`;
+        $('tanque').appendChild(div);
+      }
+      linhasFeitas = true;
+    }
+
+    const s = d.sessoes[0];
+    if (s) {
+      const p = Math.min(100, s.pct);
+      humor = Clawd.humor(p);
+      $('chat').className = `principal ${nivel(p, alerta, perigo)} ${humor}`;
+      $('nivel').style.height = p + '%';
+      posicionarClawd(p);
+      $('assunto').textContent = s.assunto;
+      $('pct').innerHTML = `${Math.round(p)}<small>%</small>`;
+      $('tokens').textContent = `${tokens(s.tokens)} de ${tokens(s.janela)} no contexto · ${tokens(s.total)} gastos no chat`;
+      $('recado').textContent = p >= perigo ? 'Contexto quase cheio. Abra um chat novo agora.'
+        : p >= alerta ? 'Hora de fechar este chat e abrir um novo.'
+        : `Pode seguir. Aviso aos ${alerta}%.`;
+    } else {
+      posicionarClawd(0);
+      $('pct').textContent = '–';
+      $('tokens').textContent = 'Nenhum chat nas últimas 6 horas.';
+      $('recado').textContent = '';
+    }
+
+    medidor($('m-sessao'), d.uso && d.uso.sessao, d.limiteUso);
+    medidor($('m-semana'), d.uso && d.uso.semana, d.limiteUso);
+    mostrarRitmo(d.ritmo);
+    mostrarPills(s);
+    dicasDaVez = montarDicas(s, d.ritmo);
+    if (!dicaMostrada) proximaDica();
+
+    const outros = d.sessoes.slice(1);
+    $('outras').hidden = !outros.length;
+    $('lista').innerHTML = outros.map(o =>
+      `<li class="${o.pct >= alerta ? 'alto' : ''}">
+        <span class="assunto">${esc(o.assunto)}</span><b>${Math.round(o.pct)}%</b>
+        <span class="meta">${tokens(o.total)} gastos · ${o.projeto} · ${atras(o.mtime)}</span>
+      </li>`
+    ).join('');
+
+    $('avisar').checked = d.config.avisarClaude;
+    $('retomar').checked = !!d.config.retomar;
+    const alvo = d.config.retomar && d.config.continuar;
+    $('alvo').hidden = !alvo;
+    if (alvo) {
+      const quando = d.uso && d.uso.sessao ? renova(d.uso.sessao.renova).replace('renova', 'Renova') + ' (+1 min)' : '';
+      $('alvo').innerHTML = `Vai retomar: <strong>${esc(alvo.assunto)}</strong><span>${quando}</span>`;
+    }
+    const top = s ? Math.round(s.pct) + '% chat' : 'Tanque do Claude';
+    document.title = d.uso && d.uso.sessao ? `${top} · ${Math.round(d.uso.sessao.pct)}% sessão` : top;
+  }
+
+  const horaDe = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`; };
+
+  function mostrarRitmo(r) {
+    suando = !!r && r.nivel === 'avancado';
+    $('ritmo').hidden = !r;
+    if (!r) return;
+    $('ritmo').className = 'ritmo ' + r.nivel;
+    $('ritmo').innerHTML = r.nivel === 'avancado'
+      ? `Seu ritmo: <strong>avançado</strong>. Nesse passo a sessão acaba às ${horaDe(r.acaba)}, antes de renovar.`
+      : r.nivel === 'moderado'
+        ? `Seu ritmo: <strong>moderado</strong>. Deve chegar a uns ${r.projetado}% da sessão até renovar.`
+        : `Seu ritmo: <strong>leve</strong>. Sobra bastante sessão.`;
+  }
+
+  function mostrarPills(s) {
+    if (!s) { $('pills').innerHTML = ''; return; }
+    const pill = (txt, on, extra = '') => `<span class="pill ${on ? 'on' : ''} ${extra}">${esc(txt)}</span>`;
+    $('pills').innerHTML = [
+      pill(s.obsidian ? 'Obsidian em uso' : 'Obsidian parado', s.obsidian),
+      pill(s.graphify ? (s.graphifyUsado ? 'Graphify em uso' : 'Graphify ativo') : 'Sem Graphify', s.graphify),
+      ...s.skills.map(k => pill(k.replace(/^[\w-]+:/, ''), true, 'skill')),
+    ].join('');
+  }
+
+  // dicas: as que batem com o momento do chat vêm primeiro
+  const DICAS = {
+    token: [
+      'Um chat por tarefa. Cada resposta relê o contexto inteiro, então chat longo encarece tudo.',
+      'Mudou de assunto? /clear zera o contexto. Sessão "pia de cozinha" piora a resposta e gasta mais.',
+      'Corrigiu duas vezes e ainda está errado? /clear e recomece com um prompt melhor, levando o que aprendeu.',
+      'Pergunta rápida que não precisa ficar no chat? Use /btw: a resposta não entra no contexto.',
+      'Use /compact com foco: "/compact foque nas mudanças da API" guarda o que importa.',
+      'Esc duas vezes (ou /rewind) e "Resumir a partir daqui" condensa só um pedaço do chat.',
+      'Investigação grande? Peça "use subagentes pra investigar X". A leitura fica fora do seu contexto.',
+      'Peça só o trecho que importa ("linhas 80 a 140") em vez do arquivo inteiro.',
+      'Cole só a linha do erro e o que veio antes dela, não o log inteiro.',
+      'CLI como gh gasta menos contexto que API ou MCP pra falar com serviços externos.',
+      'CLAUDE.md curto. O que só vale às vezes vira skill, que carrega só quando precisa.',
+      'Rode /context pra ver o que está ocupando o contexto agora.',
+      'Esforço médio resolve a maioria das tarefas. Deixe o alto pra bug difícil e arquitetura.',
+    ],
+    uso: [
+      'Dê a ele um jeito de conferir: teste, build ou print. Ele itera sozinho até passar.',
+      'Peça evidência em vez de "pronto": a saída do teste, o comando rodado, o print.',
+      'Explore, planeje, codifique: modo plan (Shift+Tab) e Ctrl+G pra editar o plano antes.',
+      'Dá pra descrever a mudança numa frase? Pule o plano e peça direto.',
+      'Seja específico: qual arquivo, qual cenário e como testar.',
+      'Aponte um padrão do projeto: "siga como o widget X foi feito".',
+      'Bug: diga o sintoma, onde deve estar e o que conta como consertado.',
+      'Use @arquivo, cole prints e mande URLs da documentação.',
+      'Feature grande: peça pra ele te entrevistar e escrever um SPEC.md, e implemente num chat novo.',
+      'Dê nome aos chats com /rename. Depois é só claude --resume pra voltar.',
+      'Use /goal com uma condição (ex.: testes passando) pra ele só parar quando cumprir.',
+      'Antes de dar como pronto, rode /code-review: revisão num contexto limpo acha o que passou.',
+      'Regra que não pode falhar vira hook. CLAUDE.md é conselho; hook é garantia.',
+      'Viu que ele foi pelo caminho errado? Aperte Esc cedo e corrija.',
+      'Fim de leva: peça o handoff no Obsidian antes de fechar, mesmo abaixo dos 65%.',
+    ],
+  };
+  let dicasDaVez = [], dicaIdx = -1, dicaMostrada = false;
+  function montarDicas(s, r) {
+    const ja = [];
+    if (s && s.pct >= 40) ja.push(['token', `Este chat já está em ${Math.round(s.pct)}%. Feche a tarefa atual e siga num chat novo com um handoff.`]);
+    if (r && r.nivel === 'avancado') ja.push(['token', 'Ritmo alto: baixe o esforço pra médio e peça respostas curtas até a sessão renovar.']);
+    if (s && !s.graphify) ja.push(['uso', 'Este projeto não tem Graphify. Rodar /graphify faz ele achar código sem varrer pasta por pasta.']);
+    if (s && !s.obsidian) ja.push(['uso', 'Este chat ainda não anotou nada no Obsidian. Peça pra registrar as descobertas no vault.']);
+    const resto = [];
+    for (let i = 0; i < Math.max(DICAS.token.length, DICAS.uso.length); i++) {
+      if (DICAS.token[i]) resto.push(['token', DICAS.token[i]]);
+      if (DICAS.uso[i]) resto.push(['uso', DICAS.uso[i]]);
+    }
+    return [...ja, ...resto];
+  }
+  function proximaDica() {
+    if (!dicasDaVez.length) return;
+    dicaIdx = (dicaIdx + 1) % dicasDaVez.length;
+    const [tipo, texto] = dicasDaVez[dicaIdx];
+    $('dica-tipo').textContent = tipo === 'token' ? 'Economizar token' : 'Usar melhor o Claude';
+    $('dica-texto').textContent = texto;
+    dicaMostrada = true;
+  }
+  $('dica-proxima').addEventListener('click', proximaDica);
+  setInterval(proximaDica, 20000);
+
+  $('avisar').addEventListener('change', e => window.tanque.config({ avisarClaude: e.target.checked }));
+  $('retomar').addEventListener('change', async e => { await window.tanque.config({ retomar: e.target.checked }); atualizar(); });
+  atualizar();
+  setInterval(atualizar, 5000);
+</script>
+</body>
+</html>
